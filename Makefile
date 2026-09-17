@@ -1,10 +1,13 @@
-CJSON_OBJ = cJSON.o
+# Core cJSON is built from rust/cjson (C-ABI). Utils remains C until sibling lands.
+CJSON_RUST_DIR = rust/cjson
+CJSON_RUST_TARGET = $(CURDIR)/build-cargo-cjson
+CJSON_RUST_LIB = $(CJSON_RUST_TARGET)/release/libcjson.a
 UTILS_OBJ = cJSON_Utils.o
 CJSON_LIBNAME = libcjson
 UTILS_LIBNAME = libcjson_utils
 CJSON_TEST = cJSON_test
 
-CJSON_TEST_SRC = cJSON.c test.c
+CJSON_TEST_SRC = test.c
 
 LDLIBS = -lm
 
@@ -84,29 +87,30 @@ test: tests
 
 #tests
 #cJSON
-$(CJSON_TEST): $(CJSON_TEST_SRC) cJSON.h
-	$(CC) $(R_CFLAGS) $(CJSON_TEST_SRC)  -o $@ $(LDLIBS) -I.
+$(CJSON_TEST): $(CJSON_TEST_SRC) cJSON.h $(CJSON_RUST_LIB)
+	$(CC) $(R_CFLAGS) $(CJSON_TEST_SRC) -o $@ -Wl,--whole-archive $(CJSON_RUST_LIB) -Wl,--no-whole-archive $(LDLIBS) -lpthread -ldl -I.
 
 #static libraries
-#cJSON
-$(CJSON_STATIC): $(CJSON_OBJ)
-	$(AR) rcs $@ $<
+#cJSON (Rust C-ABI archive)
+$(CJSON_RUST_LIB):
+	CARGO_TARGET_DIR=$(CJSON_RUST_TARGET) cargo build --release --manifest-path $(CJSON_RUST_DIR)/Cargo.toml
+
+$(CJSON_STATIC): $(CJSON_RUST_LIB)
+	cp $(CJSON_RUST_LIB) $@
 #cJSON_Utils
 $(UTILS_STATIC): $(UTILS_OBJ)
 	$(AR) rcs $@ $<
 
 #shared libraries .so.1.0.0
 #cJSON
-$(CJSON_SHARED_VERSION): $(CJSON_OBJ)
-	$(CC) -shared -o $@ $< $(CJSON_SO_LDFLAG) $(LDFLAGS)
+$(CJSON_SHARED_VERSION): $(CJSON_RUST_LIB)
+	$(CC) -shared -o $@ -Wl,--whole-archive $(CJSON_RUST_LIB) -Wl,--no-whole-archive $(CJSON_SO_LDFLAG) $(LDFLAGS) $(LDLIBS) -lpthread -ldl
 #cJSON_Utils
-$(UTILS_SHARED_VERSION): $(UTILS_OBJ)
-	$(CC) -shared -o $@ $< $(CJSON_OBJ) $(UTILS_SO_LDFLAG) $(LDFLAGS)
+$(UTILS_SHARED_VERSION): $(UTILS_OBJ) $(CJSON_RUST_LIB)
+	$(CC) -shared -o $@ $< -Wl,--whole-archive $(CJSON_RUST_LIB) -Wl,--no-whole-archive $(UTILS_SO_LDFLAG) $(LDFLAGS) $(LDLIBS) -lpthread -ldl
 
 #objects
-#cJSON
-$(CJSON_OBJ): cJSON.c cJSON.h
-#cJSON_Utils
+#cJSON_Utils (still C; links against Rust core symbols at shared-lib link time)
 $(UTILS_OBJ): cJSON_Utils.c cJSON_Utils.h cJSON.h
 
 
@@ -157,7 +161,8 @@ remove-dir:
 uninstall: uninstall-utils uninstall-cjson remove-dir
 
 clean:
-	$(RM) $(CJSON_OBJ) $(UTILS_OBJ) #delete object files
+	$(RM) $(UTILS_OBJ) #delete object files
 	$(RM) $(CJSON_SHARED) $(CJSON_SHARED_VERSION) $(CJSON_SHARED_SO) $(CJSON_STATIC) #delete cJSON
 	$(RM) $(UTILS_SHARED) $(UTILS_SHARED_VERSION) $(UTILS_SHARED_SO) $(UTILS_STATIC) #delete cJSON_Utils
 	$(RM) $(CJSON_TEST)  #delete test
+	$(RM) -r $(CJSON_RUST_TARGET)

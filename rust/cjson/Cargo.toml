@@ -1,0 +1,20 @@
+[package]
+name = "cjson"
+version = "1.7.19"
+edition = "2021"
+description = "cJSON core library (C-ABI compatible Rust port)"
+license = "MIT"
+publish = false
+
+[lib]
+name = "cjson"
+crate-type = ["staticlib", "cdylib", "rlib"]
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
