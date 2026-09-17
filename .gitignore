@@ -8,6 +8,8 @@ test
 tags
 *.dylib*
 build/
+build-rust/
+build-cargo-cjson/
 cJSON_test
 cJSON_test_utils
 libcjson.so.*

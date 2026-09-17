@@ -26,28 +26,38 @@ jobs:
         compiler:
           - GCC
           - CLANG
+        library_type:
+          - SHARED
+          - STATIC
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
     - name: install build dependencies
       run: |
         sudo apt-get update
         sudo apt-get install clang-14 valgrind
-    - name: build and test
+    - name: build and test (C suite vs Rust C-ABI)
       shell: bash
       run: |
-          if [ "${{ matrix.mem_check }}" == "ENABLE_VALGRIND" ]; then
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=ON -DENABLE_SAFE_STACK=ON -DENABLE_SANITIZERS=OFF"
-          elif [ "${{ matrix.mem_check }}" == "ENABLE_SANITIZERS" ]; then
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=ON"
+          if [ "${{ matrix.library_type }}" == "SHARED" ]; then
+            LIB_OPT="-DBUILD_SHARED_LIBS=ON"
           else
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=OFF"
+            LIB_OPT="-DBUILD_SHARED_LIBS=OFF"
+          fi
+          # SAFE_STACK does not apply to the Rust staticlib; keep it off.
+          if [ "${{ matrix.mem_check }}" == "ENABLE_VALGRIND" ]; then
+            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=ON -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=OFF ${LIB_OPT}"
+          elif [ "${{ matrix.mem_check }}" == "ENABLE_SANITIZERS" ]; then
+            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=ON ${LIB_OPT}"
+          else
+            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=OFF ${LIB_OPT}"
           fi
           if [ "${{ matrix.compiler }}" == "GCC" ]; then
             export CC=gcc
           else
             export CC=clang
           fi
-          #run build and test
           JOBS=20
           export CTEST_PARALLEL_LEVEL=$JOBS
           export CTEST_OUTPUT_ON_FAILURE=1
@@ -55,10 +65,9 @@ jobs:
           cd build
           echo [cmake]: cmake .. $EVENT_CMAKE_OPTIONS
           cmake .. $EVENT_CMAKE_OPTIONS || (rm -rf * && cmake .. $EVENT_CMAKE_OPTIONS)
-          cmake --build .
-          make
-          make test
-          
+          cmake --build . -j$JOBS
+          ctest --output-on-failure
+
   macos:
     runs-on: macos-latest
     if: "!contains(github.event.head_commit.message, 'ci skip')"
@@ -66,30 +75,31 @@ jobs:
       fail-fast: false
       matrix:
         mem_check:
-          - ENABLE_VALGRIND
           - ENABLE_SANITIZERS
           - NONE_MEM_CHECK
         compiler:
-          - GCC
           - CLANG
+        library_type:
+          - SHARED
+          - STATIC
     steps:
-    - uses: actions/checkout@v2
-    - name: build and test
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: build and test (C suite vs Rust C-ABI)
       shell: bash
       run: |
-          if [ "${{ matrix.mem_check }}" == "ENABLE_VALGRIND" ]; then
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=ON -DENABLE_SAFE_STACK=ON -DENABLE_SANITIZERS=OFF"
-          elif [ "${{ matrix.mem_check }}" == "ENABLE_SANITIZERS" ]; then
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=ON"
+          if [ "${{ matrix.library_type }}" == "SHARED" ]; then
+            LIB_OPT="-DBUILD_SHARED_LIBS=ON"
           else
-            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=OFF"
+            LIB_OPT="-DBUILD_SHARED_LIBS=OFF"
           fi
-          if [ "${{ matrix.compiler }}" == "GCC" ]; then
-            export CC=gcc
+          if [ "${{ matrix.mem_check }}" == "ENABLE_SANITIZERS" ]; then
+            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=ON ${LIB_OPT}"
           else
-            export CC=clang
+            EVENT_CMAKE_OPTIONS="-DENABLE_CJSON_UTILS=ON -DENABLE_VALGRIND=OFF -DENABLE_SAFE_STACK=OFF -DENABLE_SANITIZERS=OFF ${LIB_OPT}"
           fi
-          #run build and test
+          export CC=clang
           JOBS=20
           export CTEST_PARALLEL_LEVEL=$JOBS
           export CTEST_OUTPUT_ON_FAILURE=1
@@ -97,6 +107,5 @@ jobs:
           cd build
           echo [cmake]: cmake .. $EVENT_CMAKE_OPTIONS
           cmake .. $EVENT_CMAKE_OPTIONS || (rm -rf * && cmake .. $EVENT_CMAKE_OPTIONS)
-          cmake --build .
-          make
-          make test
+          cmake --build . -j$JOBS
+          ctest --output-on-failure

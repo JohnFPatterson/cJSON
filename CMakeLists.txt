@@ -127,17 +127,13 @@ endif()
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 set(CJSON_RUST_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/rust/cjson/Cargo.toml")
 set(CJSON_CARGO_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cargo-cjson")
+# Always whole-archive the Rust staticlib into the CMake cjson target.
+# (Linking a Rust cdylib with --whole-archive does not export C-ABI symbols
+# into libcjson.so; shared and static CMake libs both consume libcjson.a.)
 set(CJSON_RUST_STATIC_LIB "${CJSON_CARGO_TARGET_DIR}/release/libcjson.a")
-set(CJSON_RUST_SHARED_LIB "${CJSON_CARGO_TARGET_DIR}/release/libcjson.so")
-
-if (CJSON_LIBRARY_TYPE STREQUAL "SHARED")
-    set(CJSON_RUST_BYPRODUCT "${CJSON_RUST_SHARED_LIB}")
-else()
-    set(CJSON_RUST_BYPRODUCT "${CJSON_RUST_STATIC_LIB}")
-endif()
 
 add_custom_command(
-    OUTPUT "${CJSON_RUST_BYPRODUCT}"
+    OUTPUT "${CJSON_RUST_STATIC_LIB}"
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${CJSON_CARGO_TARGET_DIR}
         ${CARGO_EXECUTABLE} build --release --manifest-path "${CJSON_RUST_MANIFEST}"
@@ -147,13 +143,15 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/cjson/build.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/cjson/src/lib.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/cjson/src/cjson.rs"
-    COMMENT "Building cJSON Rust C-ABI library"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cJSON.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cJSON_internals.h"
+    COMMENT "Building cJSON Rust C-ABI staticlib (libcjson.a)"
     VERBATIM
 )
-add_custom_target(cjson_rust DEPENDS "${CJSON_RUST_BYPRODUCT}")
+add_custom_target(cjson_rust DEPENDS "${CJSON_RUST_STATIC_LIB}")
 
 # Thin C shim so CMake still has a native target for install/export; real
-# symbols come from the Rust static/shared library via whole-archive.
+# symbols come from the Rust static library via whole-archive.
 set(CJSON_SHIM_SRC "${CMAKE_CURRENT_BINARY_DIR}/cjson_rust_shim.c")
 file(WRITE "${CJSON_SHIM_SRC}" "/* cJSON implementation is provided by rust/cjson (libcjson). */\nint cjson_rust_shim_anchor(void);\nint cjson_rust_shim_anchor(void) { return 0; }\n")
 
@@ -166,30 +164,24 @@ else()
     set_target_properties("${CJSON_LIB}-static" PROPERTIES PREFIX "lib")
 endif()
 add_dependencies("${CJSON_LIB}" cjson_rust)
+set_target_properties("${CJSON_LIB}" PROPERTIES LINK_DEPENDS "${CJSON_RUST_STATIC_LIB}")
 
 if (APPLE)
-    set(CJSON_WHOLE_ARCHIVE_BEGIN "-Wl,-force_load")
-    set(CJSON_WHOLE_ARCHIVE_END "")
+    # -force_load must take the archive path as its argument.
+    set(CJSON_RUST_LINK_LIBS "-Wl,-force_load,${CJSON_RUST_STATIC_LIB}" m pthread dl)
 else()
-    set(CJSON_WHOLE_ARCHIVE_BEGIN "-Wl,--whole-archive")
-    set(CJSON_WHOLE_ARCHIVE_END "-Wl,--no-whole-archive")
+    set(CJSON_RUST_LINK_LIBS
+        "-Wl,--whole-archive" "${CJSON_RUST_STATIC_LIB}" "-Wl,--no-whole-archive"
+        m pthread dl)
 endif()
 
-if (CJSON_LIBRARY_TYPE STREQUAL "SHARED")
-    target_link_libraries("${CJSON_LIB}" PRIVATE
-        ${CJSON_WHOLE_ARCHIVE_BEGIN} "${CJSON_RUST_SHARED_LIB}" ${CJSON_WHOLE_ARCHIVE_END}
-        m pthread dl)
-else()
-    target_link_libraries("${CJSON_LIB}" PUBLIC
-        ${CJSON_WHOLE_ARCHIVE_BEGIN} "${CJSON_RUST_STATIC_LIB}" ${CJSON_WHOLE_ARCHIVE_END}
-        m pthread dl)
-endif()
+# PUBLIC so dependents (tests, cjson_utils) pick up pthread/dl when needed.
+target_link_libraries("${CJSON_LIB}" PUBLIC ${CJSON_RUST_LINK_LIBS})
 
 if (BUILD_SHARED_AND_STATIC_LIBS)
     add_dependencies("${CJSON_LIB}-static" cjson_rust)
-    target_link_libraries("${CJSON_LIB}-static" PUBLIC
-        ${CJSON_WHOLE_ARCHIVE_BEGIN} "${CJSON_RUST_STATIC_LIB}" ${CJSON_WHOLE_ARCHIVE_END}
-        m pthread dl)
+    set_target_properties("${CJSON_LIB}-static" PROPERTIES LINK_DEPENDS "${CJSON_RUST_STATIC_LIB}")
+    target_link_libraries("${CJSON_LIB}-static" PUBLIC ${CJSON_RUST_LINK_LIBS})
 endif()
 
 target_include_directories("${CJSON_LIB}" PUBLIC
