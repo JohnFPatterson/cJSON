@@ -10,6 +10,7 @@ tags
 build/
 build-rust/
 build-cargo-cjson/
+build-cargo-cjson-utils/
 cJSON_test
 cJSON_test_utils
 libcjson.so.*
@@ -23,4 +24,6 @@ cmake-build-debug
 
 # Rust
 /rust/cjson/target/
+/rust/cjson_utils/target/
 **/cargo-cjson/
+**/cargo-cjson-utils/

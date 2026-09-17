@@ -1,18 +1,26 @@
 # C tests against the Rust C-ABI drop-in
 
-Core lives in `rust/cjson` ([PR #1](https://github.com/JohnFPatterson/cJSON/pull/1)).
-This harness keeps the **existing C Unity / `test.c` suite** as the source of
-truth and wires CMake/Make/CI so those tests link against the Rust-produced
-C ABI (with `cJSON_Utils` still C until the Utils track lands).
+Stack: core ([PR #1](https://github.com/JohnFPatterson/cJSON/pull/1)) →
+Utils ([PR #2](https://github.com/JohnFPatterson/cJSON/pull/2)) → this harness.
+
+| Library | Crate | Header |
+|---|---|---|
+| `libcjson` | `rust/cjson` | `cJSON.h` (+ `cJSON_internals.h` for Unity white-box) |
+| `libcjson_utils` | `rust/cjson_utils` | `cJSON_Utils.h` |
+
+`cJSON_Utils.c` remains in-tree but is **not** built by CMake/Make anymore.
 
 ## How to run
 
 ```bash
-# Shared libcjson.so + Utils ON (default merge-shaped config)
+# Full C suite, shared libs, Utils ON (default merge-shaped config)
 ./scripts/run-c-tests-against-rust.sh
 
-# Static libcjson.a + Utils ON
+# Static
 ./scripts/run-c-tests-against-rust.sh --static
+
+# Utils-only smoke (from Utils track)
+./rust/cjson_utils/run_c_tests.sh
 ```
 
 Or manually:
@@ -28,9 +36,7 @@ ctest --test-dir build-rust --output-on-failure
 
 Requires `cargo` / `rustc` on `PATH`.
 
-## Merge gate (must pass vs Rust core)
-
-With `ENABLE_CJSON_UTILS=ON` the full suite is **22** CTest targets:
+## Merge gate (22 with Utils ON)
 
 | # | CTest name | Role |
 |---|---|---|
@@ -38,16 +44,15 @@ With `ENABLE_CJSON_UTILS=ON` the full suite is **22** CTest targets:
 | 2–8 | `parse_examples` `parse_number` `parse_hex4` `parse_string` `parse_array` `parse_object` `parse_value` | parse |
 | 9–13 | `print_string` `print_number` `print_array` `print_object` `print_value` | print |
 | 14–19 | `misc_tests` `parse_with_opts` `compare_tests` `cjson_add` `readme_examples` `minify_tests` | misc / public |
-| 20–22 | `json_patch_tests` `old_utils_tests` `misc_utils_tests` | Utils (C Utils + Rust core) |
+| 20–22 | `json_patch_tests` `old_utils_tests` `misc_utils_tests` | Utils |
 
-Core-only (`ENABLE_CJSON_UTILS=OFF`) is the 19-test subset without rows 20–22.
+## Shared vs static / embedding note
 
-White-box Unity tests call internals via `cJSON_internals.h` (no longer
-`#include "cJSON.c"`); those symbols are exported from the Rust core.
+CMake whole-archives each crate’s **staticlib** into the matching native target
+(`libcjson` ← `libcjson.a`, `libcjson_utils` ← `libcjson_utils.a`).
 
-## Shared vs static
-
-CMake always whole-archives `cargo-cjson/release/libcjson.a` into the native
-`cjson` target. That is required for `BUILD_SHARED_LIBS=ON`: a Rust `cdylib`
-cannot be `--whole-archive`d into `libcjson.so` and still export the C ABI to
-test binaries.
+Today `rust/cjson_utils` path-depends on `rust/cjson`, so **`libcjson_utils`
+embeds core symbols**. Utils CTest targets therefore link **only**
+`cjson_utils` (not also `cjson`) to avoid duplicate `global_hooks` /
+`cJSON_*`. A follow-up can make the Utils `cdylib` `DT_NEEDED` `libcjson`
+instead of embedding the core rlib.

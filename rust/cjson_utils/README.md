@@ -29,8 +29,8 @@ cargo build --release
 Runs `misc_utils_tests`, `json_patch_tests`, and `old_utils_tests` linked to
 `libcjson_utils.so` (which pulls in Rust core via the path dependency).
 
-## Still needed (harness track)
+## Still needed (optional follow-up)
 
-- CMake/Make option to build/link this crate instead of `cJSON_Utils.c`
-- Prefer linking a separate `libcjson` + `libcjson_utils` like upstream (today the
-  Utils cdylib embeds core via the `cjson` rlib path dep for standalone testing)
+- Prefer Utils `cdylib` with `DT_NEEDED` on `libcjson` rather than embedding the
+  core rlib (CMake/Make currently whole-archive `libcjson_utils.a`, which embeds
+  core; Utils tests link only `cjson_utils` to avoid duplicate symbols).
