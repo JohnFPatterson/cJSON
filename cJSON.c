@@ -91,11 +91,13 @@ typedef struct {
 } error;
 static error global_error = { NULL, 0 };
 
+/* Return a pointer into the input JSON at the last parse error, or NULL if the last parse succeeded. */
 CJSON_PUBLIC(const char *) cJSON_GetErrorPtr(void)
 {
     return (const char*) (global_error.json + global_error.position);
 }
 
+/* Return the string value of a cJSON_String item, or NULL if item is not a string. */
 CJSON_PUBLIC(char *) cJSON_GetStringValue(const cJSON * const item)
 {
     if (!cJSON_IsString(item))
@@ -106,6 +108,7 @@ CJSON_PUBLIC(char *) cJSON_GetStringValue(const cJSON * const item)
     return item->valuestring;
 }
 
+/* Return the numeric value of a cJSON_Number item, or NaN if item is not a number. */
 CJSON_PUBLIC(double) cJSON_GetNumberValue(const cJSON * const item)
 {
     if (!cJSON_IsNumber(item))
@@ -121,6 +124,7 @@ CJSON_PUBLIC(double) cJSON_GetNumberValue(const cJSON * const item)
     #error cJSON.h and cJSON.c have different versions. Make sure that both have the same.
 #endif
 
+/* Return the library version as a "major.minor.patch" string. */
 CJSON_PUBLIC(const char*) cJSON_Version(void)
 {
     static char version[15];
@@ -185,6 +189,7 @@ static void * CJSON_CDECL internal_realloc(void *pointer, size_t size)
 
 static internal_hooks global_hooks = { internal_malloc, internal_free, internal_realloc };
 
+/* Duplicate string using the given allocator. Caller must free the result with the matching deallocate hook. */
 static unsigned char* cJSON_strdup(const unsigned char* string, const internal_hooks * const hooks)
 {
     size_t length = 0;
@@ -206,6 +211,7 @@ static unsigned char* cJSON_strdup(const unsigned char* string, const internal_h
     return copy;
 }
 
+/* Install custom malloc/free hooks. Pass NULL to restore the standard library allocators. */
 CJSON_PUBLIC(void) cJSON_InitHooks(cJSON_Hooks* hooks)
 {
     if (hooks == NULL)
@@ -1128,6 +1134,7 @@ static parse_buffer *skip_utf8_bom(parse_buffer * const buffer)
     return buffer;
 }
 
+/* Parse a null-terminated JSON string. See cJSON_ParseWithLengthOpts for the full option set. */
 CJSON_PUBLIC(cJSON *) cJSON_ParseWithOpts(const char *value, const char **return_parse_end, cJSON_bool require_null_terminated)
 {
     size_t buffer_length;
@@ -1229,6 +1236,7 @@ CJSON_PUBLIC(cJSON *) cJSON_Parse(const char *value)
     return cJSON_ParseWithOpts(value, 0, 0);
 }
 
+/* Parse a JSON buffer of known length (does not require a trailing '\0'). */
 CJSON_PUBLIC(cJSON *) cJSON_ParseWithLength(const char *value, size_t buffer_length)
 {
     return cJSON_ParseWithLengthOpts(value, buffer_length, 0, 0);
@@ -1236,6 +1244,7 @@ CJSON_PUBLIC(cJSON *) cJSON_ParseWithLength(const char *value, size_t buffer_len
 
 #define cjson_min(a, b) (((a) < (b)) ? (a) : (b))
 
+/* Render item to a newly allocated string. format=true pretty-prints; false prints compact JSON. */
 static unsigned char *print(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
 {
     static const size_t default_buffer_size = 256;
@@ -1309,11 +1318,13 @@ CJSON_PUBLIC(char *) cJSON_Print(const cJSON *item)
     return (char*)print(item, true, &global_hooks);
 }
 
+/* Render item to compact JSON with no extra whitespace. Caller must free the result. */
 CJSON_PUBLIC(char *) cJSON_PrintUnformatted(const cJSON *item)
 {
     return (char*)print(item, false, &global_hooks);
 }
 
+/* Render item using a pre-sized buffer that grows as needed. fmt=1 pretty-prints, 0 is compact. */
 CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON_bool fmt)
 {
     printbuffer p = { 0, 0, 0, 0, 0, 0, { 0, 0, 0 } };
@@ -1345,6 +1356,8 @@ CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON
     return (char*)p.buffer;
 }
 
+/* Render item into a caller-owned buffer of length bytes. Returns true on success.
+ * Allocate a few extra bytes; the size estimate is not always exact. */
 CJSON_PUBLIC(cJSON_bool) cJSON_PrintPreallocated(cJSON *item, char *buffer, const int length, const cJSON_bool format)
 {
     printbuffer p = { 0, 0, 0, 0, 0, 0, { 0, 0, 0 } };
@@ -1919,6 +1932,7 @@ CJSON_PUBLIC(int) cJSON_GetArraySize(const cJSON *array)
     return (int)size;
 }
 
+/* Return the item at index in array, or NULL if index is out of range. */
 static cJSON* get_array_item(const cJSON *array, size_t index)
 {
     cJSON *current_child = NULL;
@@ -1938,6 +1952,7 @@ static cJSON* get_array_item(const cJSON *array, size_t index)
     return current_child;
 }
 
+/* Retrieve the item at index from array. Returns NULL if index is negative or out of range. */
 CJSON_PUBLIC(cJSON *) cJSON_GetArrayItem(const cJSON *array, int index)
 {
     if (index < 0)
@@ -1948,6 +1963,7 @@ CJSON_PUBLIC(cJSON *) cJSON_GetArrayItem(const cJSON *array, int index)
     return get_array_item(array, (size_t)index);
 }
 
+/* Find a child of object by key name, optionally case-sensitively. */
 static cJSON *get_object_item(const cJSON * const object, const char * const name, const cJSON_bool case_sensitive)
 {
     cJSON *current_element = NULL;
@@ -1980,16 +1996,19 @@ static cJSON *get_object_item(const cJSON * const object, const char * const nam
     return current_element;
 }
 
+/* Get the object member named string. Key lookup is case-insensitive. */
 CJSON_PUBLIC(cJSON *) cJSON_GetObjectItem(const cJSON * const object, const char * const string)
 {
     return get_object_item(object, string, false);
 }
 
+/* Same as cJSON_GetObjectItem, but key lookup is case-sensitive. */
 CJSON_PUBLIC(cJSON *) cJSON_GetObjectItemCaseSensitive(const cJSON * const object, const char * const string)
 {
     return get_object_item(object, string, true);
 }
 
+/* Return true if object has a member named string (case-insensitive). */
 CJSON_PUBLIC(cJSON_bool) cJSON_HasObjectItem(const cJSON *object, const char *string)
 {
     return cJSON_GetObjectItem(object, string) ? 1 : 0;
@@ -2255,6 +2274,7 @@ CJSON_PUBLIC(cJSON*) cJSON_AddArrayToObject(cJSON * const object, const char * c
     return NULL;
 }
 
+/* Unlink item from parent without deleting it. The caller owns the returned item. */
 CJSON_PUBLIC(cJSON *) cJSON_DetachItemViaPointer(cJSON *parent, cJSON * const item)
 {
     if ((parent == NULL) || (item == NULL) || (item != parent->child && item->prev == NULL))
@@ -2778,7 +2798,8 @@ CJSON_PUBLIC(cJSON *) cJSON_CreateStringArray(const char *const *strings, int co
     return a;
 }
 
-/* Duplication */
+/* Duplicate item into newly allocated memory. With recurse!=0, children are copied as well.
+ * The copy's next/prev pointers are always NULL. Caller must cJSON_Delete the result. */
 cJSON * cJSON_Duplicate_rec(const cJSON *item, size_t depth, cJSON_bool recurse);
 
 CJSON_PUBLIC(cJSON *) cJSON_Duplicate(const cJSON *item, cJSON_bool recurse)
@@ -2921,6 +2942,7 @@ static void minify_string(char **input, char **output) {
     }
 }
 
+/* Remove whitespace and comments from json in place. json must point to writable memory, not a string literal. */
 CJSON_PUBLIC(void) cJSON_Minify(char *json)
 {
     char *into = json;
@@ -2969,6 +2991,7 @@ CJSON_PUBLIC(void) cJSON_Minify(char *json)
     *into = '\0';
 }
 
+/* Type predicates: each returns true if item has the corresponding type. NULL items are never a match. */
 CJSON_PUBLIC(cJSON_bool) cJSON_IsInvalid(const cJSON * const item)
 {
     if (item == NULL)
@@ -3069,6 +3092,7 @@ CJSON_PUBLIC(cJSON_bool) cJSON_IsRaw(const cJSON * const item)
     return (item->type & 0xFF) == cJSON_Raw;
 }
 
+/* Recursively compare two JSON values for equality. case_sensitive controls whether object keys are compared case-sensitively. */
 CJSON_PUBLIC(cJSON_bool) cJSON_Compare(const cJSON * const a, const cJSON * const b, const cJSON_bool case_sensitive)
 {
     if ((a == NULL) || (b == NULL) || ((a->type & 0xFF) != (b->type & 0xFF)))
@@ -3194,11 +3218,13 @@ CJSON_PUBLIC(cJSON_bool) cJSON_Compare(const cJSON * const a, const cJSON * cons
     }
 }
 
+/* Allocate using the malloc hook set by cJSON_InitHooks (or the default malloc). */
 CJSON_PUBLIC(void *) cJSON_malloc(size_t size)
 {
     return global_hooks.allocate(size);
 }
 
+/* Free using the free hook set by cJSON_InitHooks (or the default free). */
 CJSON_PUBLIC(void) cJSON_free(void *object)
 {
     global_hooks.deallocate(object);
