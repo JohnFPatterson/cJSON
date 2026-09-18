@@ -63,6 +63,7 @@
 #endif
 #define false ((cJSON_bool)0)
 
+/* Allocate a copy of string using cJSON_malloc. Caller must free with cJSON_free. */
 static unsigned char* cJSONUtils_strdup(const unsigned char* const string)
 {
     size_t length = 0;
@@ -195,6 +196,9 @@ static void encode_string_as_pointer(unsigned char *destination, const unsigned 
     destination[0] = '\0';
 }
 
+/* Build an RFC 6901 JSON Pointer from object down to target.
+ * Returns an allocated string ("" if object == target), or NULL if target is not found.
+ * The caller must free the result with cJSON_free. */
 CJSON_PUBLIC(char *) cJSONUtils_FindPointerFromObjectTo(const cJSON * const object, const cJSON * const target)
 {
     size_t child_index = 0;
@@ -271,6 +275,7 @@ static cJSON *get_array_item(const cJSON *array, size_t item)
     return child;
 }
 
+/* Parse a JSON Pointer array index (leading zeros are invalid). Writes *index and returns true on success. */
 static cJSON_bool decode_array_index_from_pointer(const unsigned char * const pointer, size_t * const index)
 {
     size_t parsed_index = 0;
@@ -298,6 +303,7 @@ static cJSON_bool decode_array_index_from_pointer(const unsigned char * const po
     return 1;
 }
 
+/* Walk an RFC 6901 JSON Pointer and return the referenced item, or NULL if the path is invalid. */
 static cJSON *get_item_from_pointer(cJSON * const object, const char * pointer, const cJSON_bool case_sensitive)
 {
     cJSON *current_element = object;
@@ -345,17 +351,20 @@ static cJSON *get_item_from_pointer(cJSON * const object, const char * pointer, 
     return current_element;
 }
 
+/* Find the item referenced by an RFC 6901 JSON Pointer. Object keys are matched case-insensitively. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GetPointer(cJSON * const object, const char *pointer)
 {
     return get_item_from_pointer(object, pointer, false);
 }
 
+/* Same as cJSONUtils_GetPointer, but object keys are matched case-sensitively. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GetPointerCaseSensitive(cJSON * const object, const char *pointer)
 {
     return get_item_from_pointer(object, pointer, true);
 }
 
 /* JSON Patch implementation. */
+/* Decode JSON Pointer escape sequences in place: ~0 -> '~', ~1 -> '/'. */
 static void decode_pointer_inplace(unsigned char *string)
 {
     unsigned char *decoded_string = string;
@@ -592,6 +601,7 @@ static cJSON *sort_list(cJSON *list, const cJSON_bool case_sensitive)
     return result;
 }
 
+/* Sort an object's children by key using mergesort. */
 static void sort_object(cJSON * const object, const cJSON_bool case_sensitive)
 {
     if (object == NULL)
@@ -601,6 +611,7 @@ static void sort_object(cJSON * const object, const cJSON_bool case_sensitive)
     object->child = sort_list(object->child, case_sensitive);
 }
 
+/* Recursively compare two JSON values. Objects are sorted first so key order does not matter. */
 static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensitive)
 {
     if ((a == NULL) || (b == NULL) || ((a->type & 0xFF) != (b->type & 0xFF)))
@@ -727,6 +738,7 @@ static cJSON_bool insert_item_in_array(cJSON *array, size_t which, cJSON *newite
     return 1;
 }
 
+/* Look up an object member by name, optionally case-sensitively. */
 static cJSON *get_object_item(const cJSON * const object, const char* name, const cJSON_bool case_sensitive)
 {
     if (case_sensitive)
@@ -739,6 +751,7 @@ static cJSON *get_object_item(const cJSON * const object, const char* name, cons
 
 enum patch_operation { INVALID, ADD, REMOVE, REPLACE, MOVE, COPY, TEST };
 
+/* Map a JSON Patch "op" string to a patch_operation. Returns INVALID if the op is missing or unknown. */
 static enum patch_operation decode_patch_operation(const cJSON * const patch, const cJSON_bool case_sensitive)
 {
     cJSON *operation = get_object_item(patch, "op", case_sensitive);
@@ -804,6 +817,7 @@ static void overwrite_item(cJSON * const root, const cJSON replacement)
     memcpy(root, &replacement, sizeof(cJSON));
 }
 
+/* Apply a single RFC 6902 JSON Patch operation to object. Returns 0 on success, non-zero on failure. */
 static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_sensitive)
 {
     cJSON *path = NULL;
@@ -1035,6 +1049,8 @@ cleanup:
     return status;
 }
 
+/* Apply an RFC 6902 JSON Patch array to object (case-insensitive keys).
+ * Returns 0 on success. Not atomic: earlier ops stay applied if a later one fails. */
 CJSON_PUBLIC(int) cJSONUtils_ApplyPatches(cJSON * const object, const cJSON * const patches)
 {
     const cJSON *current_patch = NULL;
@@ -1064,6 +1080,7 @@ CJSON_PUBLIC(int) cJSONUtils_ApplyPatches(cJSON * const object, const cJSON * co
     return 0;
 }
 
+/* Same as cJSONUtils_ApplyPatches, but object keys are matched case-sensitively. */
 CJSON_PUBLIC(int) cJSONUtils_ApplyPatchesCaseSensitive(cJSON * const object, const cJSON * const patches)
 {
     const cJSON *current_patch = NULL;
@@ -1093,6 +1110,8 @@ CJSON_PUBLIC(int) cJSONUtils_ApplyPatchesCaseSensitive(cJSON * const object, con
     return 0;
 }
 
+/* Build one JSON Patch operation object and append it to patches.
+ * If suffix is non-NULL it is pointer-encoded and appended to path. */
 static void compose_patch(cJSON * const patches, const unsigned char * const operation, const unsigned char * const path, const unsigned char *suffix, const cJSON * const value)
 {
     cJSON *patch = NULL;
@@ -1133,11 +1152,13 @@ static void compose_patch(cJSON * const patches, const unsigned char * const ope
     cJSON_AddItemToArray(patches, patch);
 }
 
+/* Append a JSON Patch operation {op, path, value} to array. */
 CJSON_PUBLIC(void) cJSONUtils_AddPatchToArray(cJSON * const array, const char * const operation, const char * const path, const cJSON * const value)
 {
     compose_patch(array, (const unsigned char*)operation, (const unsigned char*)path, NULL, value);
 }
 
+/* Recursively emit RFC 6902 patches that transform from into to, using path as the current JSON Pointer. */
 static void create_patches(cJSON * const patches, const unsigned char * const path, cJSON * const from, cJSON * const to, const cJSON_bool case_sensitive)
 {
     if ((from == NULL) || (to == NULL))
@@ -1278,6 +1299,8 @@ static void create_patches(cJSON * const patches, const unsigned char * const pa
     }
 }
 
+/* Generate an RFC 6902 JSON Patch array that transforms from into to.
+ * NOTE: sorts object members in both trees by key. Caller must cJSON_Delete the result. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GeneratePatches(cJSON * const from, cJSON * const to)
 {
     cJSON *patches = NULL;
@@ -1293,6 +1316,7 @@ CJSON_PUBLIC(cJSON *) cJSONUtils_GeneratePatches(cJSON * const from, cJSON * con
     return patches;
 }
 
+/* Same as cJSONUtils_GeneratePatches, but object keys are compared case-sensitively. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GeneratePatchesCaseSensitive(cJSON * const from, cJSON * const to)
 {
     cJSON *patches = NULL;
@@ -1308,16 +1332,19 @@ CJSON_PUBLIC(cJSON *) cJSONUtils_GeneratePatchesCaseSensitive(cJSON * const from
     return patches;
 }
 
+/* Sort an object's members into alphabetical order (case-insensitive). */
 CJSON_PUBLIC(void) cJSONUtils_SortObject(cJSON * const object)
 {
     sort_object(object, false);
 }
 
+/* Sort an object's members into alphabetical order (case-sensitive). */
 CJSON_PUBLIC(void) cJSONUtils_SortObjectCaseSensitive(cJSON * const object)
 {
     sort_object(object, true);
 }
 
+/* Apply an RFC 7386 JSON Merge Patch to target and return the (possibly replaced) target pointer. */
 static cJSON *merge_patch(cJSON *target, const cJSON * const patch, const cJSON_bool case_sensitive)
 {
     cJSON *patch_child = NULL;
@@ -1382,16 +1409,21 @@ static cJSON *merge_patch(cJSON *target, const cJSON * const patch, const cJSON_
     return target;
 }
 
+/* Apply an RFC 7386 JSON Merge Patch (case-insensitive keys).
+ * target is modified in place; the return value is the new target pointer. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_MergePatch(cJSON *target, const cJSON * const patch)
 {
     return merge_patch(target, patch, false);
 }
 
+/* Same as cJSONUtils_MergePatch, but object keys are matched case-sensitively. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_MergePatchCaseSensitive(cJSON *target, const cJSON * const patch)
 {
     return merge_patch(target, patch, true);
 }
 
+/* Generate an RFC 7386 JSON Merge Patch that transforms from into to.
+ * NOTE: sorts object members in both trees by key. */
 static cJSON *generate_merge_patch(cJSON * const from, cJSON * const to, const cJSON_bool case_sensitive)
 {
     cJSON *from_child = NULL;
@@ -1474,11 +1506,14 @@ static cJSON *generate_merge_patch(cJSON * const from, cJSON * const to, const c
     return patch;
 }
 
+/* Generate an RFC 7386 JSON Merge Patch that transforms from into to (case-insensitive keys).
+ * NOTE: sorts object members in both trees by key. Caller must cJSON_Delete the result. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GenerateMergePatch(cJSON * const from, cJSON * const to)
 {
     return generate_merge_patch(from, to, false);
 }
 
+/* Same as cJSONUtils_GenerateMergePatch, but object keys are compared case-sensitively. */
 CJSON_PUBLIC(cJSON *) cJSONUtils_GenerateMergePatchCaseSensitive(cJSON * const from, cJSON * const to)
 {
     return generate_merge_patch(from, to, true);
