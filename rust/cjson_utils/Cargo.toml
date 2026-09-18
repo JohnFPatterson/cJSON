@@ -1,0 +1,19 @@
+[package]
+name = "cjson_utils"
+version = "1.7.19"
+edition = "2021"
+description = "Rust C-ABI drop-in for cJSON_Utils (depends on rust/cjson core ABI)"
+license = "MIT"
+publish = false
+
+[lib]
+name = "cjson_utils"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+# Core C-ABI symbols + types from the sibling Rust core crate (PR #1).
+cjson = { path = "../cjson" }
+
+[features]
+default = []

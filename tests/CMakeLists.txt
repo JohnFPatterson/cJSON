@@ -101,7 +101,8 @@ if(ENABLE_CJSON_TEST)
 
         foreach (cjson_utils_test ${cjson_utils_tests})
             add_executable("${cjson_utils_test}" "${cjson_utils_test}.c")
-            target_link_libraries("${cjson_utils_test}" "${CJSON_LIB}" "${CJSON_UTILS_LIB}" unity)
+            # Rust libcjson_utils embeds core; linking CJSON_LIB as well duplicates symbols.
+            target_link_libraries("${cjson_utils_test}" "${CJSON_UTILS_LIB}" unity)
             if("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
                 target_sources(${cjson_utils_test} PRIVATE unity_setup.c)
             endif()
